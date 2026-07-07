@@ -2416,7 +2416,10 @@ header.shell::before {
   pointer-events: none;
   z-index: 2;
 }
-footer.filter-bar { position: relative; }
+/* v87 · Die Filterleiste steht über der Marginalien-Szene (z-index 59), damit
+   Ritter & Schnecke HINTER der Leiste laufen: Füße verdeckt, Kopf ragt oben
+   heraus — „wo kein Filter ist, sieht man sie". */
+footer.filter-bar { position: relative; z-index: 61; }
 footer.filter-bar::before {
   content: "";
   position: absolute;
@@ -3209,7 +3212,7 @@ body.pest-omen .pest-omen-veil {
   pointer-events:auto;image-rendering:pixelated;image-rendering:crisp-edges;}
 
 /* Marginalien-Szene: Pixel-Schnecke jagt fliehenden Pixel-Ritter */
-.ft-scene{position:fixed;left:0;bottom:5px;z-index:60;pointer-events:none;
+.ft-scene{position:fixed;left:0;bottom:22px;z-index:59;pointer-events:none;
   display:flex;align-items:flex-end;gap:30px;opacity:.92;will-change:transform;}
 .ft-scene canvas{display:block;pointer-events:auto;cursor:pointer;
   image-rendering:pixelated;image-rendering:crisp-edges;}
@@ -4930,21 +4933,38 @@ function HeatmapModule({binSize = 5, dark}) {
     return {m, maxV};
   }, [binSize, nBins, F.selectedRegions, F.selectedArtists]);
 
-  // v87 · Grafische Lücke: leere Zellen INNERHALB der belegten Zeitspanne einer
-  // Gattung (zwischen erstem und letztem überlieferten Bin) sind echte Lücken —
-  // das Material war in Gebrauch, aber für diese Spanne ist nichts überliefert.
-  // Zellen vor dem ersten / nach dem letzten Beleg bleiben leer (nicht behauptet).
+  // v87 · Grafische Lücke — bewusst zurückhaltend (Marius-Review): NICHT jede
+  // einzelne leere Zelle wird zur Lücke erklärt (eine 5-Jahres-Null bei einer
+  // seltenen Gattung ist kein Wissensloch, nur dünne Statistik). Markiert wird
+  // nur ein zusammenhängender LEER-LAUF von mind. ~10 Jahren INNERHALB der
+  // belegten Spanne einer Gattung: das Material war nachweislich in Gebrauch,
+  // davor und danach überliefert — und dazwischen klafft eine echte Lücke.
   const gapCells = React.useMemo(() => {
     const out = [];
+    const minRun = Math.max(2, Math.ceil(10 / binSize));
     GENRES.forEach((g, gi) => {
       const row = counts.m[g];
-      let first = -1, last = -1;
+      let first = -1, last = -1, filled = 0;
       for (let i = 0; i < nBins; i++) { if (row[i] > 0) { if (first < 0) first = i; last = i; } }
       if (first < 0) return;                 // Gattung nie belegt → keine Lücke behaupten
-      for (let i = first + 1; i < last; i++) if (row[i] === 0) out.push({gi, bi: i, g});
+      for (let i = first; i <= last; i++) if (row[i] > 0) filled++;
+      // Belegungsdichte: nur bei sonst DICHT belegten Gattungen ist ein
+      // Innen-Loch überhaupt aussagekräftig. Bei dünn überlieferten Gattungen
+      // (Glas, Teppich, Wandmalerei) ist die Leere Normalzustand, keine Lücke —
+      // dann wird gar nichts behauptet (Marius-Review: keine erfundenen Löcher).
+      if (filled / (last - first + 1) < 0.5) return;
+      let runStart = -1;
+      for (let i = first + 1; i <= last; i++) {
+        const empty = i < last && row[i] === 0;
+        if (empty) { if (runStart < 0) runStart = i; }
+        else if (runStart >= 0) {
+          if (i - runStart >= minRun) for (let j = runStart; j < i; j++) out.push({gi, bi: j, g});
+          runStart = -1;
+        }
+      }
     });
     return out;
-  }, [counts, nBins]);
+  }, [counts, nBins, binSize]);
 
   // Werke ohne zugeordnete Gattung ('—'): sie fehlen in JEDER Zeile der Heatmap.
   const noGenreCount = React.useMemo(() => {
@@ -6035,8 +6055,8 @@ function ChronologieModule({layers, showTraining}) {
                      rx={SP+5} ry={Math.max(5, h/2+4)}
                      fill="url(#lacuna-gold)" pointerEvents="none" />
             {/* symmetrischer Unsicherheits-Verlauf: Lebensspanne unbekannt */}
-            <rect x={Math.max(padL, mx-SP)} y={ay} width={Math.min(SP, mx-padL)} height={h} fill={`url(#fadeL-${key})`} opacity="0.45" />
-            <rect x={mx} y={ay} width={Math.min(SP, rightEdge-mx)} height={h} fill={`url(#fadeR-${key})`} opacity="0.45" />
+            <rect x={Math.max(padL, mx-SP)} y={ay} width={Math.min(SP, mx-padL)} height={h} fill={`url(#fadeL-${key})`} opacity="0.62" />
+            <rect x={mx} y={ay} width={Math.min(SP, rightEdge-mx)} height={h} fill={`url(#fadeR-${key})`} opacity="0.62" />
             {/* belegter Anker (Geburt/Tod/Wirkungsjahr) */}
             <circle cx={mx} cy={cy} r={r} fill={color} opacity="0.95" />
             <circle cx={mx} cy={cy} r={r+1.1} fill="none" stroke={color} strokeWidth="0.6" opacity="0.5" />
@@ -6047,11 +6067,11 @@ function ChronologieModule({layers, showTraining}) {
         <g key={'a'+i} className={muted?'dim':''} {...handlers}
            style={{cursor:'pointer'}}>
           {/* belegter Kernzeitraum Geburt→Tod */}
-          <rect x={x0} y={ay} width={Math.max(1, x1-x0)} height={h} fill={color} opacity="0.85" />
+          <rect className="data-mark" x={x0} y={ay} width={Math.max(1, x1-x0)} height={h} fill={color} opacity="0.85" />
           {/* Geburt unsicher → Verlauf nach links vor die Zahl, mit Goldschimmer dahinter */}
           {showB && bW > 0.5 && (
             bGesch
-              ? <rect x={bx-bW} y={ay} width={bW} height={h} fill={`url(#hatch-${key})`} opacity="0.65" />
+              ? <rect x={bx-bW} y={ay} width={bW} height={h} fill={`url(#hatch-${key})`} opacity="0.82" />
               : <>
                   <ellipse className="lacuna-glow" cx={bx - bW*0.5} cy={ay + h/2}
                            rx={bW*0.62 + 4} ry={Math.max(5, h/2 + 4)}
@@ -6062,7 +6082,7 @@ function ChronologieModule({layers, showTraining}) {
           {/* Tod unsicher → Verlauf nach rechts hinter die Zahl, mit Goldschimmer dahinter */}
           {showD && dW > 0.5 && (
             dGesch
-              ? <rect x={dx} y={ay} width={dW} height={h} fill={`url(#hatch-${key})`} opacity="0.65" />
+              ? <rect x={dx} y={ay} width={dW} height={h} fill={`url(#hatch-${key})`} opacity="0.82" />
               : <>
                   <ellipse className="lacuna-glow" cx={dx + dW*0.5} cy={ay + h/2}
                            rx={dW*0.62 + 4} ry={Math.max(5, h/2 + 4)}
@@ -6249,10 +6269,12 @@ function ChronologieModule({layers, showTraining}) {
               </linearGradient>
             );
           })}
-          {/* v26 · A2 — Goldgrund-Hof, aus dem die Floruit-Anker auftauchen */}
+          {/* v26 · A2 — Goldgrund-Hof, aus dem die Floruit-Anker auftauchen.
+              v87 · Kräftiger und mit tieferem Goldkern, damit die Lücke auch
+              auf weißem Grund deutlich ins Auge fällt (Marius-Review). */}
           <radialGradient id="lacuna-gold" cx="50%" cy="50%" r="50%">
-            <stop offset="0%"   stopColor="#D9B46E" stopOpacity="0.9" />
-            <stop offset="55%"  stopColor="#D9B46E" stopOpacity="0.32" />
+            <stop offset="0%"   stopColor="#B8860B" stopOpacity="0.95" />
+            <stop offset="42%"  stopColor="#D9B46E" stopOpacity="0.60" />
             <stop offset="100%" stopColor="#D9B46E" stopOpacity="0" />
           </radialGradient>
         </defs>
@@ -9870,6 +9892,37 @@ function NetzwerkModule() {
     return {nodes: ns, links: ls, centers};
   }, [nodes, links, regions, w, h]);
 
+  /* ── 2b. Der Goldring der Lücke (v87) ──────────────────────────────────
+     Künstler, die der externe Abgleich (RAW_MISSING) kennt, die aber im
+     Korpus GAR NICHT vorkommen. Sie liegen als verbindungslose Goldknoten
+     außen um das Netz — sichtbar „überschüssig", ohne Kanten, weil wir
+     nichts über ihre Beziehungen wissen. Das ist die echte Lücke, kein
+     erfundenes Loch: das Netz endet, und außen wartet, was fehlt. */
+  const missingRing = React.useMemo(() => {
+    const canon = new Set((window.RAW_ARTISTS || []).map(a => normName(a.name)));
+    const seen = {};
+    (window.RAW_MISSING || []).forEach(m => {
+      const nm = (m.artist || '').trim();
+      if (!nm || canon.has(normName(nm))) return;   // schon im Korpus → keine Lücke
+      if (!seen[nm]) seen[nm] = {name: nm, lifedates: m.lifedates || '', city: m.city || '', works: 0};
+      seen[nm].works++;
+    });
+    const arr = Object.values(seen);
+    if (!arr.length || !w || !h) return [];
+    const cx = w / 2, cy = (h - 40) / 2 + 8;
+    let maxD = Math.min(w, h) * 0.42;
+    (positioned.nodes || []).forEach(n => {
+      const d = Math.hypot(n.x - cx, n.y - cy) + n.r;
+      if (d > maxD) maxD = d;
+    });
+    const ringR = Math.min(maxD + 30, Math.min(w, h) / 2 - 12);
+    return arr.map((m, i) => {
+      const a = (i / arr.length) * Math.PI * 2 - Math.PI / 2;
+      return {...m, x: cx + Math.cos(a) * ringR, y: cy + Math.sin(a) * ringR,
+              r: 3.2 + Math.sqrt(m.works) * 1.5, ang: a};
+    });
+  }, [positioned, w, h]);
+
   /* ── 3. Filter-Auswertung ─────────────────────────────────────────────── */
   const passes = (n) => {
     // Zeitfilter: produktives Fenster muss yearRange schneiden
@@ -9987,7 +10040,7 @@ function NetzwerkModule() {
               op = (!anyFilter || (sOK && tOK)) ? 0.22 : 0.04;
             }
             return (
-              <path key={'e'+i} d={path} fill="none"
+              <path key={'e'+i} d={path} fill="none" className="data-mark"
                 stroke={color} strokeOpacity={op}
                 strokeWidth={sw} strokeLinecap="round" />
             );
@@ -10007,7 +10060,7 @@ function NetzwerkModule() {
             const isFocusCore = hasFocus && focusSet.has(n.id);
             const isNeighborLabel = hasFocus && inFocus && !isFocusCore;
             return (
-              <g key={n.id} data-node="1" data-artist={n.name} className="interactive" style={{cursor:'pointer'}} opacity={op}
+              <g key={n.id} data-node="1" data-artist={n.name} className="interactive data-mark" style={{cursor:'pointer'}} opacity={op}
                  onMouseEnter={(e) => {
                    setHoverNode(n.id);
                    const works = (window.RAW_WORKS || []).filter(w =>
@@ -10093,6 +10146,45 @@ function NetzwerkModule() {
               </g>
             );
           })}
+
+          {/* v87 · Goldring der Lücke — im Abgleich gefundene, im Korpus fehlende
+              Meister. Verbindungslos, außen herum: das ist die echte Lücke. */}
+          {missingRing.length > 0 && (
+            <g className="gap-ring">
+              {missingRing.map(m => {
+                const anchorEnd = Math.cos(m.ang) < -0.02;
+                const anchorStart = Math.cos(m.ang) > 0.02;
+                const ta = anchorEnd ? 'end' : anchorStart ? 'start' : 'middle';
+                const lx = m.x + Math.cos(m.ang) * (m.r + 5);
+                const ly = m.y + Math.sin(m.ang) * (m.r + 5) + (Math.sin(m.ang) > 0.4 ? 7 : Math.sin(m.ang) < -0.4 ? -3 : 3);
+                return (
+                  <g key={'miss'+m.name} className="interactive" style={{cursor:'help'}}
+                     onMouseEnter={(e) => TT.show(e.clientX, e.clientY,
+                       <>
+                         <div className="ttl">{m.name}</div>
+                         {m.lifedates && <div className="row"><span className="k">Lebensdaten</span>
+                           <span className="v">{m.lifedates}</span></div>}
+                         <div className="row"><span className="k">im Korpus</span>
+                           <span className="v">nicht vorhanden</span></div>
+                         <div className="src">im externen Abgleich gefunden ({m.works} {m.works===1?'Werk':'Werke'}) · die Lücke des Kanons</div>
+                       </>)}
+                     onMouseMove={(e) => TT.move(e.clientX, e.clientY)}
+                     onMouseLeave={() => TT.hide()}>
+                    <circle cx={m.x} cy={m.y} r={m.r + 3.5} fill="none"
+                            stroke="var(--gold)" strokeOpacity="0.45"
+                            strokeWidth="0.8" strokeDasharray="1.5,1.5" />
+                    <circle cx={m.x} cy={m.y} r={m.r} fill="var(--gold)"
+                            stroke="var(--paper)" strokeWidth="0.8" />
+                    <text x={lx} y={ly} fontSize="7.5" fill="#7A5B1E" textAnchor={ta}
+                          style={{fontFamily:'var(--font-sans)', pointerEvents:'none',
+                                  paintOrder:'stroke', stroke:'var(--paper)', strokeWidth:2.4}}>
+                      {m.name.length > 20 ? m.name.slice(0,19)+'…' : m.name}
+                    </text>
+                  </g>
+                );
+              })}
+            </g>
+          )}
         </g>
 
         {/* v81 · Die Legende ist nach oben in den „Legende"-Chip gewandert
