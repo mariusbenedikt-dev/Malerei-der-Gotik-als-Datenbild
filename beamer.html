@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Beamer · Gotische Malerei</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Gleiche Palette + Schriften wie der Forschungstisch. */
+  :root{
+    --bg:#121212; --paper:#181715; --surface-1:#1E1C18; --surface-2:#26221B;
+    --ink:#ECE9E3; --ink-mid:#B7B2A9; --ink-light:#8C877E; --ink-faint:#565049;
+    --rule:#302D29; --gold:#E7C879; --gold-deep:#4A3A12;
+    --font-sans:'Inter Tight','Inter','Helvetica Neue',Arial,sans-serif;
+    --font-mono:'JetBrains Mono','SFMono-Regular',Consolas,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;background:#0d0d0d;overflow:hidden;}
+  body{font-family:var(--font-sans);color:var(--ink);}
+  #stage{position:fixed;inset:0;background:radial-gradient(120% 120% at 50% 42%, #161513 0%, #0d0d0d 70%);}
+
+  canvas#net{position:fixed;inset:0;display:block;cursor:pointer;}
+
+  /* ---- Zurückhaltende Datenschicht am Rand ---- */
+  .edge{position:fixed;z-index:10;pointer-events:none;}
+  #filter{top:20px;left:0;right:0;display:flex;justify-content:center;gap:10px;align-items:center;
+    flex-wrap:wrap;padding:0 150px;}
+  /* v17 · Beamer-Typografie durchgehend groesser — ueber den Projektor war die
+     kleine Schrift kaum lesbar. */
+  #filter .ft-title{font-size:17px;font-weight:600;letter-spacing:.02em;color:var(--ink-mid);}
+  /* Nachbarschaft/Chips in Grau, wie die aktive Filterleiste auf dem Forschungstisch selbst
+     (dort ebenfalls neutral statt farbig hervorgehoben). */
+  #filter .chip{font-family:var(--font-mono);font-size:13px;letter-spacing:.03em;
+    color:var(--ink-mid);border:1px solid var(--rule);border-radius:12px;padding:3px 11px;
+    background:rgba(30,28,24,.55);}
+  #filter .chip.axis{color:var(--ink);border-color:var(--ink-mid);background:rgba(183,178,169,.12);}
+  #count{top:24px;right:26px;font-family:var(--font-mono);font-size:13.5px;letter-spacing:.04em;
+    color:var(--ink-faint);text-align:right;}
+
+  /* aufgerufenes Werk — Text schlicht unten links */
+  #caption{left:34px;bottom:30px;max-width:58%;opacity:0;transition:opacity .7s ease;
+    text-shadow:0 1px 10px rgba(0,0,0,.9),0 0 3px rgba(0,0,0,.95);}
+  #caption.on{opacity:1;}
+  #caption .c-artist{font-size:33px;font-weight:700;letter-spacing:-.01em;line-height:1.15;}
+  #caption .c-meta{font-family:var(--font-mono);font-size:18px;color:var(--ink-mid);margin-top:7px;line-height:1.4;}
+  #caption .c-prov{font-family:var(--font-mono);font-size:14px;letter-spacing:.06em;
+    text-transform:uppercase;margin-top:10px;display:inline-flex;align-items:center;gap:8px;color:var(--ink-mid);}
+  #caption .c-prov .dot{width:11px;height:11px;border-radius:50%;box-shadow:0 0 0 1px rgba(255,255,255,.25);}
+
+  /* leerer Filter */
+  #empty{inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;
+    text-align:center;padding:60px;z-index:11;}
+  #empty.on{display:flex;}
+  #empty .e-title{font-size:30px;font-weight:800;letter-spacing:-.01em;color:var(--gold);}
+  #empty .e-sub{font-family:var(--font-mono);font-size:13px;color:var(--ink-mid);max-width:520px;line-height:1.5;}
+
+  /* Warteschirm */
+  #status{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;gap:10px;
+    align-items:center;justify-content:center;background:#0d0d0d;text-align:center;padding:40px;}
+  #status .mark{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);font-weight:600;}
+  #status .msg{font-size:20px;color:var(--ink-mid);max-width:640px;line-height:1.5;}
+  #status.hidden{display:none;}
+
+  /* ---- Diagrammatische Brotkrumen rechts neben dem Großbild (v11) ----
+     Kleine „Herkunfts"-Diagramme des gerade geöffneten Werks: der Ast im
+     Länder-/Künstler-Baum, die Lebenslinie des Künstlers und sein Zeit-
+     genossen-Netz. Aus denselben Korpusdaten wie der Forschungstisch. */
+  #bc{top:50%;right:46px;transform:translateY(-50%);width:360px;display:flex;
+      flex-direction:column;gap:30px;opacity:0;transition:opacity .7s ease;}
+  #bc.on{opacity:1;}
+  #bc .lab{font-family:var(--font-mono);font-size:12px;letter-spacing:.14em;
+      text-transform:uppercase;color:#C8C2B8;opacity:.95;margin:0 0 10px;}
+  #bc .lab .sub{margin-left:9px;color:#ABA59B;letter-spacing:.04em;text-transform:none;}
+  #bc .card svg{display:block;width:100%;overflow:visible;}
+  #bc text{font-family:var(--font-mono);}
+</style>
+<style>
+/* Zweite-Lesart-Verbund: der Beamer läuft auch in einem schmalen Panel neben dem Tisch */
+@media (max-width:820px){
+  #filter{padding:0 18px;top:48px;justify-content:flex-start;gap:8px}
+  #count{top:16px;right:18px}
+  #caption{max-width:72%;left:22px;bottom:22px}
+  #caption .c-artist{font-size:26px} #caption .c-meta{font-size:15px}
+  #bc{width:220px;right:16px}
+}
+@media (max-width:560px){ #bc{display:none} }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="net"></canvas>
+
+  <div class="edge" id="filter"></div>
+  <div class="edge" id="count"></div>
+
+  <div class="edge" id="caption">
+    <div class="c-artist" id="c-artist"></div>
+    <div class="c-meta" id="c-meta"></div>
+    <div class="c-prov" id="c-prov"><span class="dot" id="c-dot"></span><span id="c-provtext"></span></div>
+  </div>
+
+  <div class="edge" id="empty">
+    <div class="e-title" id="e-title">—</div>
+    <div class="e-sub" id="e-sub"></div>
+  </div>
+
+  <!-- Herkunfts-Diagramme des fokussierten Werks (rechts) -->
+  <div class="edge" id="bc"></div>
+
+  <div id="status">
+    <div class="mark">Zweite Lesart · Beamer</div>
+    <div class="msg">Verbinde mit der Oberfläche …<br>
+      Dieses Fenster bitte über „Beamer · Zweiter Bildschirm“ in der Oberfläche öffnen.</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  /* Verbindung zur Oberfläche: im eingebetteten Feld über window.parent, als eigenes Fenster über window.opener.
+     Ist der direkte Zugriff gesperrt (z. B. lokal per file://), kommen Daten und Filter per postMessage. */
+  var opener = null;
+  try { if (window.parent !== window) { void window.parent.document; opener = window.parent.__ZL_FT_WINDOW__ || null; } } catch(e){ opener = null; }
+  if (!opener) { try { if (window.opener) { void window.opener.document; opener = window.opener; } } catch(e){ opener = null; } }
+  if (!opener && (window.parent !== window || window.opener)) {
+    var FAKE = { closed: false };
+    var dup = function(x){ var o = {}; for (var k in x) o[k] = x[k]; return o; };
+    window.addEventListener('message', function(e){ var m = e.data; if (!m || !m.ft) return;
+      if (m.ft === 'data') { var d = m.d;
+        FAKE.RAW_ARTISTS = d.RAW_ARTISTS; FAKE.CHRONO_STRANDS = d.CHRONO_STRANDS; FAKE.CHRONO_STRAND_META = d.CHRONO_STRAND_META; FAKE.BILDER_MANIFEST = true;
+        try { FAKE.normName = (new Function('return (' + d.normName + ')'))(); } catch(_) { FAKE.normName = function(n){ return (n||'').toLowerCase().replace(/[,.]/g,' ').split(/\s+/).filter(Boolean).sort().join(' '); }; }
+        FAKE.bildEntriesForWork = function(w){ return (d.img[w.id] || []).map(dup); };
+        FAKE.bildEntryForWork = function(w){ var x = d.one[w.id]; return x ? dup(x) : null; };
+        FAKE.bildUrl = function(e){ return e && e.__u; };
+        FAKE.bildProvenienz = function(e){ return (e && e.__p) || { short: '', color: '#8C877E' }; };
+        FAKE.RAW_WORKS = d.RAW_WORKS; }
+      if (m.ft === 'state') { FAKE.__FT_FILTER__ = m.s.f; FAKE.__FT_SELECTED_ARTISTS__ = m.s.a; FAKE.__FT_BEAMER_FOCUS__ = m.s.x; } });
+    opener = FAKE;
+    var hello = function(){ try { (window.parent !== window ? window.parent : window.opener).postMessage({ ft: 'beamer-ready' }, '*'); } catch(_) {} };
+    hello(); var hi = setInterval(function(){ if (FAKE.RAW_WORKS) clearInterval(hi); else hello(); }, 1500);
+  }
+  if (!opener) return;
+
+  var statusEl = document.getElementById('status');
+  var canvas   = document.getElementById('net');
+  var ctx      = canvas.getContext('2d');
+  var elFilter = document.getElementById('filter');
+  var elCount  = document.getElementById('count');
+  var elCap     = document.getElementById('caption');
+  var elCArtist = document.getElementById('c-artist');
+  var elCMeta   = document.getElementById('c-meta');
+  var elCDot    = document.getElementById('c-dot');
+  var elCProv   = document.getElementById('c-provtext');
+  var elEmpty   = document.getElementById('empty');
+  var elETitle  = document.getElementById('e-title');
+  var elESub    = document.getElementById('e-sub');
+  var elBC      = document.getElementById('bc');
+
+  // Regionsfarben — deckungsgleich mit dem Forschungstisch (REGION_HEX ist dort
+  // ein Modul-const und nicht am window, deshalb hier gespiegelt).
+  var REGION_HEX = {
+    'Frankreich':'#1B3A8C','England':'#A8302C','Heiliges Röm. Reich':'#4A3520',
+    'Italien':'#C26A28','Avignon · Papat':'#6E2A47','Burgund · Flandern':'#5B9BD5',
+    'Böhmen':'#6B7D2E','Spanien':'#666655','Andere':'#BBBBBB'
+  };
+  function regionColor(c){ return REGION_HEX[c] || '#8C877E'; }
+  // Gattungsfarben — ebenfalls gespiegelt (GENRE_HEX ist im Forschungstisch
+  // Modul-const), für den kleinen Genre-Innenpunkt der Netzwerk-Knoten.
+  var GENRE_HEX = {
+    'Tafelbild':'#7A1C2A','Buchmalerei':'#C98A1E','Fresko':'#B5651D',
+    'Sakralbau':'#B58A2B','Glasmalerei':'#1B3A8C','Bildteppich':'#3D6B3A','Wandmalerei':'#8A4B2A'
+  };
+  var CORPUS_Y0 = 1140, CORPUS_Y1 = 1510;   // wie YEAR_MIN/YEAR_MAX im Forschungstisch
+
+  // ---------- Graphdaten (einmalig aus dem Korpus aufgebaut) ----------
+  // ARTIST_BY_NORM: normierter Name -> Künstlersatz (Lebensdaten)
+  // NET_NODE:       normierter Name -> Netzwerkknoten {region,from,to,works}
+  // NET_ADJ:        normierter Name -> [Zeitgenossen]  (gleiche Regel wie NetzwerkModule)
+  var ARTIST_BY_NORM = {}, NET_NODE = {}, NET_ADJ = {}, graphReady = false;
+  function buildGraphData() {
+    if (graphReady) return;
+    var nn = opener.normName;
+    var arts  = opener.RAW_ARTISTS || [];
+    var works = opener.RAW_WORKS || [];
+    arts.forEach(function (a) { if (a && a.name) ARTIST_BY_NORM[nn(a.name)] = a; });
+
+    // Werkzahl + dominantes Land je Künstler (aus den Werk-Ländern, wie im Modul)
+    var workCount = {}, countryCount = {};
+    works.forEach(function (w) {
+      var k = (w.artist || '').trim(); if (!k) return;
+      workCount[k] = (workCount[k] || 0) + 1;
+      if (w.country) { (countryCount[k] = countryCount[k] || {})[w.country] = (countryCount[k][w.country] || 0) + 1; }
+    });
+    var genreCount = {};
+    works.forEach(function (w) {
+      var k = (w.artist || '').trim(); if (!k || !w.genre) return;
+      (genreCount[k] = genreCount[k] || {})[w.genre] = (genreCount[k][w.genre] || 0) + 1;
+    });
+    function domOf(map, fb) {
+      if (!map) return fb; var best = fb, bn = -1; for (var c in map) if (map[c] > bn) { bn = map[c]; best = c; }
+      return best;
+    }
+    function domCountry(name, fb) { return domOf(countryCount[name], fb); }
+    // Netzwerkknoten: gültige Lebenszeit (<100 J.), produktives Fenster ab +20 J.
+    var ns = [];
+    arts.forEach(function (a) {
+      if (!(a.birth && a.death && a.death > a.birth && (a.death - a.birth) < 100)) return;
+      var wc = workCount[a.name] || 0;
+      if (!(wc > 0 || a.src === 'numbers')) return;
+      var region = domCountry(a.name, a.country || 'Andere');
+      var genre = domOf(genreCount[a.name], null);
+      ns.push({ norm:nn(a.name), name:a.name, region:region, from:a.birth + 20, to:a.death,
+                works:wc, genre:genre, genreColor: genre ? (GENRE_HEX[genre] || null) : null });
+    });
+    ns.forEach(function (n) { NET_NODE[n.norm] = n; });
+    // Kanten: gleiche Region (nicht „Andere") · produktive Überlappung ≥ 8 Jahre
+    for (var i = 0; i < ns.length; i++) for (var j = i + 1; j < ns.length; j++) {
+      var a = ns[i], b = ns[j];
+      if (a.region !== b.region || a.region === 'Andere' || !a.region) continue;
+      if (!(a.to > a.from) || !(b.to > b.from)) continue;
+      var ov = Math.max(0, Math.min(a.to, b.to) - Math.max(a.from, b.from));
+      if (ov < 8) continue;
+      (NET_ADJ[a.norm] = NET_ADJ[a.norm] || []).push({ norm:b.norm, name:b.name, region:b.region, works:b.works, overlap:ov });
+      (NET_ADJ[b.norm] = NET_ADJ[b.norm] || []).push({ norm:a.norm, name:a.name, region:a.region, works:a.works, overlap:ov });
+    }
+    graphReady = true;
+  }
+
+  var ready = false, lastKey = null, lastFocusTs = null;
+  var W = 0, H = 0, cx = 0, cy = 0, R = 0, DPR = 1;
+  var nodes = [];               // aktive Bild-Knoten
+  var edges = [];               // [i,j] Indizes in nodes (live)
+  var edgeTimer = 0;
+  var focus = null;             // {node, p, phase} p:0..1
+  var focusClock = 0;
+  var MAX_NODES = 260;   // v17 · vorher 120 → deckelte den Beamer; jetzt passen alle Werke mit Bild (~229) rein
+  var mode = 'ambient';         // 'ambient' | 'artist' (Künstler-Filter aktiv -> Slideshow)
+  var slideIdx = 0;
+  var HOLD_FRAMES = 520;        // v17 · doppelt so lange offen (vorher 260) — Frames, ~60fps ≈ 8-9 s
+  var EASE_SPEED = 0.020;       // Ein-/Ausblend-Geschwindigkeit
+  var IDLE_GAP_ARTIST = 95;     // Pause zwischen Slideshow-Bildern (Künstler-Filter)
+  var IDLE_GAP_AMBIENT = 280;   // Pause zwischen automatischen Vergrößerungen (ambient)
+  var filterFreezeUntil = 0;    // solange aktiv: kein Fokus, volle Matrix sichtbar (während man filtert)
+  var FILTER_FREEZE_MS = 1500;  // Sichtbarkeitsfenster nach jeder erkannten Filteränderung
+
+  // ---------- Setup ----------
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    cx = W / 2; cy = H / 2 + 8;
+    R = Math.min(W, H) * 0.43;
+    if (nodes.length) recomputeRadii();
+  }
+  window.addEventListener('resize', resize);
+
+  // Knoten unter der Maus finden (mit etwas Trefftoleranz), für Klick & Hover.
+  function nodeAt(mx, my) {
+    var best = null, bestD = Infinity;
+    for (var i=0;i<nodes.length;i++){
+      var nd = nodes[i];
+      if (nd.state==='out' || !nd.loaded) continue;
+      var dx = mx-nd.x, dy = my-nd.y, d = dx*dx+dy*dy;
+      var rr = nd.r + 8;
+      if (d <= rr*rr && d < bestD) { bestD = d; best = nd; }
+    }
+    return best;
+  }
+
+  // ---------- Klick-Vergrößerung ----------
+  canvas.addEventListener('click', function (evt) {
+    if (!ready) return;
+    var rect = canvas.getBoundingClientRect();
+    var best = nodeAt(evt.clientX - rect.left, evt.clientY - rect.top);
+    if (best) {
+      filterFreezeUntil = 0; // manueller Klick geht immer vor
+      focus = { node:best, p:0, phase:'in', hold:0 };
+      focusClock = 0;
+      setCaption(best);
+    } else if (focus && focus.phase !== 'out') {
+      // Klick neben das Bild: Vergrößerung wieder schließen, ohne gleich ein
+      // neues Bild zu öffnen. Sanftes Ausblenden über die 'out'-Phase.
+      focus.phase = 'out';
+      focusClock = 0;
+    }
+  });
+
+  // ---------- Hover-Vergrößerung: kleine Vorschau, bevor man klickt ----------
+  var hoverNode = null;
+  canvas.addEventListener('mousemove', function (evt) {
+    if (!ready) return;
+    var rect = canvas.getBoundingClientRect();
+    hoverNode = nodeAt(evt.clientX - rect.left, evt.clientY - rect.top);
+  });
+  canvas.addEventListener('mouseleave', function () { hoverNode = null; });
+
+  function waitForData() {
+    if (opener.closed) { statusEl.querySelector('.msg').textContent = 'Die Oberfläche wurde geschlossen.'; return; }
+    if (opener.RAW_WORKS && opener.BILDER_MANIFEST && opener.bildEntriesForWork && opener.normName) {
+      ready = true;
+      statusEl.classList.add('hidden');
+      try { buildGraphData(); } catch (e) {}
+      resize();
+      apply(readFilter());
+      requestAnimationFrame(loop);
+      setInterval(function () {
+        if (!ready || opener.closed) return;
+        var f = readFilter(); var k = filterKey(f);
+        if (k !== lastKey) {
+          lastKey = k;
+          // Während man am Filter dreht: Vergrößerung sofort schließen, volle Matrix
+          // sichtbar lassen, damit man sieht, wie sie sich neu ordnet.
+          filterFreezeUntil = Date.now() + FILTER_FREEZE_MS;
+          if (focus) { focus = null; hideFocusUI(); }
+          focusClock = 0;
+          apply(f);
+        }
+        // Klick auf ein Bild in der Forschungstisch-Seite -> hier groß zeigen.
+        var fx = opener.__FT_BEAMER_FOCUS__;
+        if (fx && fx.ts !== lastFocusTs) { lastFocusTs = fx.ts; focusOnWorkId(fx.workId); }
+      }, 220);
+    } else { setTimeout(waitForData, 300); }
+  }
+
+  // ---------- Bilder / Beleg ----------
+  function imageFor(work) {
+    try {
+      /* v17 · Erst der deduplizierte Resolver (bildEntryForWork) — genau die
+         Bildmenge, die auch die Galerie auf dem Forschungstisch zeigt (~229).
+         Vorher nur bildEntriesForWork[0], was eine kleinere/andere Menge ergab. */
+      var e0 = null;
+      if (typeof opener.bildEntryForWork === 'function') e0 = opener.bildEntryForWork(work);
+      if (!e0) {
+        var entries = opener.bildEntriesForWork(work);
+        if (entries && entries.length) e0 = entries[0];
+      }
+      if (e0) {
+        var prov = (typeof opener.bildProvenienz === 'function') ? opener.bildProvenienz(e0) : { short:'', color:'#555' };
+        return { url: opener.bildUrl(e0, 900), prov: prov };
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // Werk per Klick auf der Forschungstisch-Seite direkt hier groß zeigen —
+  // unabhängig vom aktuellen Filter/Netzwerk. Existiert bereits ein Knoten
+  // dafür, wird der fokussiert; sonst wird kurzfristig ein eigener Knoten
+  // angelegt, der beim nächsten Filterwechsel wieder verschwindet.
+  function focusOnWorkId(id) {
+    if (id == null) return;
+    filterFreezeUntil = 0;
+    for (var i=0;i<nodes.length;i++){
+      if (nodes[i].id === id && nodes[i].state !== 'out') {
+        var existing = nodes[i];
+        if (existing.loaded) {
+          focus = { node:existing, p:0, phase:'in', hold:0 };
+          focusClock = 0;
+          setCaption(existing);
+        }
+        return;
+      }
+    }
+    var w = null, works = opener.RAW_WORKS || [];
+    for (var j=0;j<works.length;j++){ if (works[j].id === id) { w = works[j]; break; } }
+    if (!w) return;
+    var info = imageFor(w);
+    if (!info) return;
+    var img = new Image(); img.decoding = 'async'; img.src = info.url;
+    var ang = Math.random()*Math.PI*2, rad = R*0.25;
+    var nd = { id:w.id, work:w, prov:info.prov, img:img, loaded:false,
+               x:cx+Math.cos(ang)*rad, y:cy+Math.sin(ang)*rad, vx:0, vy:0,
+               r:2, targetR:30, alpha:0, targetAlpha:1, state:'in', hoverT:0 };
+    img.onload = function () {
+      nd.loaded = true;
+      focus = { node:nd, p:0, phase:'in', hold:0 };
+      focusClock = 0;
+      setCaption(nd);
+    };
+    nodes.push(nd);
+    recomputeRadii();
+  }
+
+  // ---------- Filter (beamerseitig hart durchgesetzt) ----------
+  function readFilter() {
+    var f = opener.__FT_FILTER__;
+    if (f) return { active:!!f.active, artists:f.artists||[], regions:f.regions||[], genres:f.genres||[],
+                    yearActive:!!f.yearActive, yearRange:f.yearRange||[-99999,99999] };
+    var arts = opener.__FT_SELECTED_ARTISTS__ || [];
+    return { active:arts.length>0, artists:arts, regions:[], genres:[], yearActive:false, yearRange:[-99999,99999] };
+  }
+  function passesFilter(w, f) {
+    if (f.yearActive) { if (!w.year || w.year < f.yearRange[0] || w.year > f.yearRange[1]) return false; }
+    if (f.regions.length && f.regions.indexOf(w.country) === -1) return false;
+    if (f.genres.length  && f.genres.indexOf(w.genre)   === -1) return false;
+    if (f.artists.length) {
+      var nn = opener.normName(w.artist||''), hit=false;
+      for (var i=0;i<f.artists.length;i++){ if (opener.normName(f.artists[i])===nn){hit=true;break;} }
+      if (!hit) return false;
+    }
+    return true;
+  }
+  function filterKey(f) {
+    return (f.active?'1':'0') + '|A'+f.artists.slice().sort().join('¦') + '|R'+f.regions.slice().sort().join('¦') +
+           '|G'+f.genres.slice().sort().join('¦') + '|Y'+(f.yearActive?(f.yearRange[0]+'-'+f.yearRange[1]):'');
+  }
+
+  // ---------- Kopf-/Randdaten ----------
+  function setHeader(f, nWorks, nImg) {
+    elFilter.innerHTML = '';
+    function chip(t, axis){ var c=document.createElement('span'); c.className='chip'+(axis?' axis':''); c.textContent=t; elFilter.appendChild(c); }
+    var title=document.createElement('span'); title.className='ft-title';
+    if (!f.active) { title.textContent='Alle Werke'; elFilter.appendChild(title); chip('ohne Filter'); }
+    else {
+      title.textContent='Nachbarschaft'; elFilter.appendChild(title);
+      f.regions.forEach(function(r){ chip(r, true); });
+      f.genres.forEach(function(g){ chip(g, true); });
+      if (f.yearActive) chip(f.yearRange[0]+'–'+f.yearRange[1], true);
+      f.artists.forEach(function(a){ chip(a, true); });
+    }
+    // Absichtlich explizit: nImg ist die Teilmenge von nWorks, die tatsächlich
+    // ein Bild hat. Die Differenz sind Werke im Filter ohne überliefertes Bild —
+    // kein Anzeigefehler, sondern eine Lücke in den Bilddaten.
+    elCount.textContent = nImg + ' von ' + nWorks + ' Werk' + (nWorks===1?'':'en') + ' mit Bild';
+  }
+  function titleText(f){
+    if(!f.active) return 'Alle Werke';
+    var p=[]; f.regions.forEach(function(r){p.push(r);}); f.genres.forEach(function(g){p.push(g);});
+    if(f.yearActive)p.push(f.yearRange[0]+'–'+f.yearRange[1]); f.artists.forEach(function(a){p.push(a);});
+    return p.join(' · ')||'Auswahl';
+  }
+
+  // ---------- Knoten-Verwaltung ----------
+  function recomputeRadii() {
+    var n = nodes.filter(function(nd){return nd.state!=='out';}).length || 1;
+    // Knoten füllen die Kreisscheibe locker aus
+    var rr = Math.sqrt((Math.PI*R*R)/n) * 0.40;
+    var target = Math.max(16, Math.min(64, rr));
+    nodes.forEach(function(nd){ if (nd.state!=='out') nd.targetR = target; });
+  }
+
+  function apply(f) {
+    var works = (opener.RAW_WORKS||[]).filter(function(w){ return passesFilter(w,f); });
+    var items = [];
+    works.forEach(function(w){ var info=imageFor(w); if(info) items.push({work:w,url:info.url,prov:info.prov}); });
+    var imgTotal = items.length;   // v17 · echte Zahl der Werke mit Bild (vor der Begrenzung)
+    // Sicherheits-Begrenzung auf MAX_NODES (greift jetzt praktisch nie, da 260 > ~229)
+    if (items.length > MAX_NODES) {
+      items = items.slice().sort(function(a,b){return a.work.id-b.work.id;}).filter(function(_,i){
+        return i % Math.ceil(items.length/MAX_NODES) === 0;
+      }).slice(0, MAX_NODES);
+    }
+    setHeader(f, works.length, imgTotal);
+
+    var newMode = (f.active && f.artists && f.artists.length>0) ? 'artist' : 'ambient';
+    if (newMode !== mode) { mode = newMode; slideIdx = 0; focusClock = 0; }
+
+    if (!items.length) {
+      elEmpty.classList.add('on'); hideFocusUI();
+      elETitle.textContent = titleText(f);
+      elESub.textContent = works.length ? (works.length+' Werk'+(works.length===1?'':'e')+' im Filter · kein Bild überliefert')
+                                        : 'Kein Werk im aktuellen Filter';
+      nodes.forEach(function(nd){ nd.state='out'; nd.targetR=0; nd.targetAlpha=0; });
+      return;
+    }
+    elEmpty.classList.remove('on');
+
+    var want = {}; items.forEach(function(it){ want[it.work.id]=it; });
+    var have = {}; nodes.forEach(function(nd){ have[nd.id]=nd; });
+    // austretende Knoten
+    nodes.forEach(function(nd){ if(!want[nd.id]){ nd.state='out'; nd.targetR=0; nd.targetAlpha=0; } });
+    // neue Knoten
+    items.forEach(function(it){
+      if (have[it.work.id]) { have[it.work.id].state='live'; have[it.work.id].targetAlpha=1; return; }
+      var ang = Math.random()*Math.PI*2, rad = R*(0.6+Math.random()*0.5);
+      var img = new Image(); img.decoding='async'; img.src = it.url;
+      var nd = { id:it.work.id, work:it.work, prov:it.prov, img:img, loaded:false,
+                 x:cx+Math.cos(ang)*rad, y:cy+Math.sin(ang)*rad, vx:0, vy:0,
+                 r:2, targetR:30, alpha:0, targetAlpha:1, state:'in', hoverT:0 };
+      img.onload = function(){ nd.loaded=true; };
+      nodes.push(nd);
+    });
+    recomputeRadii();
+    buildEdges();
+  }
+
+  // ---------- Kanten (dynamisch, knüpfen sich neu) ----------
+  /* v18 · PERFORMANCE: vorher wurden pro Aufruf ~52.000 [dist,node]-Arrays
+     angelegt und 229 Mal voll sortiert — die Garbage-Collector-Pausen davon
+     waren als periodisches Ruckeln sichtbar. Jetzt werden die 3 nächsten
+     Nachbarn ohne jede Allokation inline bestimmt. Ergebnis identisch. */
+  function buildEdges() {
+    var live = [];
+    for (var i=0;i<nodes.length;i++) if (nodes[i].state!=='out') live.push(nodes[i]);
+    edges = [];
+    var K = 3;   // mehr Nachbarn -> dichteres, deutlicheres Netz
+    for (var a=0;a<live.length;a++){
+      var na=live[a];
+      var d1=Infinity,d2=Infinity,d3=Infinity, m1=null,m2=null,m3=null;
+      for (var b=0;b<live.length;b++){ if(a===b) continue; var nb=live[b];
+        var dx=na.x-nb.x, dy=na.y-nb.y, q=dx*dx+dy*dy;
+        if (q<d1){ d3=d2;m3=m2; d2=d1;m2=m1; d1=q;m1=nb; }
+        else if (q<d2){ d3=d2;m3=m2; d2=q;m2=nb; }
+        else if (q<d3){ d3=q;m3=nb; }
+      }
+      if (m1) edges.push([na,m1,d1]);
+      if (m2) edges.push([na,m2,d2]);
+      if (m3) edges.push([na,m3,d3]);
+    }
+  }
+
+  // ---------- Physik ----------
+  /* v18 · PERFORMANCE: Die Kollision lief als Paar-Schleife über ALLE Knoten
+     (O(n²) — bei 229 Bildern ~26.000 Distanz-Checks pro Frame). Jetzt sortiert
+     ein räumliches Gitter (Zellgröße = größter Durchmesser) die Knoten ein und
+     jeder prüft nur seine Nachbarzellen — gleicher Effekt, Bruchteil der Arbeit.
+     Verhalten und Optik unverändert (dieselbe Kraftformel). */
+  var _grid = new Map();
+  function _gkey(gx, gy){ return gx * 100000 + gy; }
+  function step() {
+    var live = [];
+    var maxR = 16;
+    for (var i=0;i<nodes.length;i++){
+      var nd=nodes[i];
+      nd.r += (nd.targetR - nd.r)*0.08;
+      nd.alpha += (nd.targetAlpha - nd.alpha)*0.06;
+      // Hover: leichte Vorschau-Vergrößerung, rein visuell (beeinflusst nicht
+      // die physikalische Kollisions-/Layout-Größe nd.r).
+      var hoverTarget = (nd === hoverNode && nd.state !== 'out' && (!focus || focus.node !== nd)) ? 1 : 0;
+      nd.hoverT += (hoverTarget - nd.hoverT) * 0.18;
+      if (nd.state==='out' && nd.alpha<0.02){ nodes.splice(i,1); i--; continue; }
+      if (nd.state==='in' && Math.abs(nd.r-nd.targetR)<1) nd.state='live';
+      if (nd.state!=='out'){ live.push(nd); if (nd.r > maxR) maxR = nd.r; }
+    }
+    // Gitter füllen (Zellgröße ≥ max. Kollisionsradius-Summe)
+    var cell = Math.max(24, maxR * 2.24 + 6);
+    _grid.clear();
+    for (var gi=0; gi<live.length; gi++){
+      var gn=live[gi];
+      gn._idx = gi;   // Paar-Dedup: jedes Paar rechnet nur einmal (idx-Vergleich)
+      gn._gx = Math.floor(gn.x / cell); gn._gy = Math.floor(gn.y / cell);
+      var k=_gkey(gn._gx, gn._gy);
+      var arr=_grid.get(k); if(!arr){ arr=[]; _grid.set(k, arr); }
+      arr.push(gn);
+    }
+    var spin = 0.0016;
+    for (var a=0; a<live.length; a++){
+      var n1=live[a], ax=0, ay=0;
+      // sanfte Mitte-Anziehung
+      ax += (cx - n1.x)*0.0018; ay += (cy - n1.y)*0.0018;
+      // langsame Rotation der Masse (tangential)
+      var rx=n1.x-cx, ry=n1.y-cy, rl=Math.sqrt(rx*rx+ry*ry)||1;
+      ax += (-ry/rl)*spin*rl*0.02; ay += (rx/rl)*spin*rl*0.02;
+      // weiche Abstoßung / Kollision — nur Nachbarzellen (statt aller Knoten)
+      for (var ox=-1; ox<=1; ox++) for (var oy=-1; oy<=1; oy++){
+        var bucket=_grid.get(_gkey(n1._gx+ox, n1._gy+oy));
+        if(!bucket) continue;
+        for (var bi=0; bi<bucket.length; bi++){
+          var n2=bucket[bi];
+          if (n2._idx <= n1._idx) continue;   // jedes Paar nur einmal (wie zuvor b>a)
+          var dx=n1.x-n2.x, dy=n1.y-n2.y, dist=Math.sqrt(dx*dx+dy*dy)||0.01;
+          var min=(n1.r+n2.r)*1.12+6;
+          if (dist<min){ var f=(min-dist)/dist*0.06, fx=dx*f, fy=dy*f;
+            n1.vx+=fx; n1.vy+=fy; n2.vx-=fx; n2.vy-=fy; }
+        }
+      }
+      // leichtes Rauschen für ständige Bewegung
+      ax += (Math.random()-0.5)*0.05; ay += (Math.random()-0.5)*0.05;
+      n1.vx=(n1.vx+ax)*0.90; n1.vy=(n1.vy+ay)*0.90;
+      n1.x+=n1.vx; n1.y+=n1.vy;
+      // kreisförmige Grenze
+      var ddx=n1.x-cx, ddy=n1.y-cy, dd=Math.sqrt(ddx*ddx+ddy*ddy);
+      var lim=R - n1.r*0.4;
+      if (dd>lim){ var s=lim/dd; n1.x=cx+ddx*s; n1.y=cy+ddy*s; n1.vx*=0.4; n1.vy*=0.4; }
+    }
+    // Kanten periodisch neu knüpfen (sie „verbinden sich mit neuen Bildern")
+    edgeTimer++;
+    if (edgeTimer>34){ edgeTimer=0; buildEdges(); }
+
+    // Fokus-Zyklus (pausiert, solange gerade am Filter gedreht wird -> volle Matrix sichtbar)
+    var frozen = Date.now() < filterFreezeUntil;
+    if (frozen && focus) { focus = null; hideFocusUI(); focusClock=0; }
+    focusClock++;
+    var idleGap = (mode==='artist') ? IDLE_GAP_ARTIST : IDLE_GAP_AMBIENT;
+    var minLive = (mode==='artist') ? 1 : 2;
+    // focusClock zählt erst NACH dem Schließen eines Bildes hoch (siehe unten),
+    // damit die Pause wirklich zwischen "klein geworden" und "nächstes öffnet" liegt.
+    if (!frozen && !focus && live.length>=minLive && focusClock>idleGap){
+      if (mode==='artist') startFocusSequential(live); else startFocus(live);
+    }
+    if (focus){
+      if (focus.phase==='in'){ focus.p+=EASE_SPEED; if(focus.p>=1){focus.p=1;focus.phase='hold';focus.hold=0;} }
+      else if (focus.phase==='hold'){ focus.hold++; if(focus.hold>HOLD_FRAMES) focus.phase='out'; }
+      else if (focus.phase==='out'){ focus.p-=EASE_SPEED; if(focus.p<=0){ focus=null; hideFocusUI(); focusClock=0; } }
+    }
+  }
+
+  // ---------- Diagrammatische Brotkrumen (SVG) ----------
+  // Minimalistisch gehalten: keine Kästen, nur ein feines Label + das
+  // Diagramm. Die grafische Sprache (regionsfarbige Knoten, geschwungene
+  // Kanten, Genre-Innenpunkt, goldener Auswahlring) ist bewusst dieselbe
+  // wie in den Original-Diagrammen des Forschungstischs.
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function trunc(s,n){ s=String(s||''); return s.length>n ? s.slice(0,n-1)+'…' : s; }
+  function card(title, sub, svgStr){
+    var s = sub ? ' <span class="sub">'+esc(sub)+'</span>' : '';
+    return '<div class="card"><div class="lab">'+esc(title)+s+'</div>'+svgStr+'</div>';
+  }
+  function svg(h, parts){ return '<svg viewBox="0 0 '+CW+' '+h+'" height="'+h+'">'+parts.join('')+'</svg>'; }
+  function netR(works){ return 3.2 + Math.sqrt(works||1)*2.0; }   // wie Original: 4+√works·3, klein skaliert
+  var CW = 360;   // v17 · Innenbreite der Karten-SVGs (breiter fuer groessere Schrift)
+
+  // Ast im Länder-/Künstler-Baum: Korpus → Land → Künstler → Werk.
+  // Schlichter Strang, Knoten in Regionsfarbe wie im Baum-Original.
+  function cardTree(w, col){
+    var rows = [
+      {val:'Gotische Malerei',                                        kind:'root'},
+      {val:(w.country||'—'),                                          kind:'country'},
+      {val:(w.artist&&w.artist.trim())? w.artist : 'anonym',          kind:'artist'},
+      {val:trunc(w.title||'—', 34),                                   kind:'work'}
+    ];
+    var x0=7, gap=27, y0=10, yEnd=y0+gap*(rows.length-1), H=yEnd+9, parts=[];
+    parts.push('<line x1="'+x0+'" y1="'+y0+'" x2="'+x0+'" y2="'+yEnd+'" stroke="'+col+'" stroke-width="1" opacity="0.38"/>');
+    rows.forEach(function(r,i){
+      var y=y0+gap*i;
+      if (r.kind==='country')     parts.push('<circle cx="'+x0+'" cy="'+y+'" r="3.6" fill="'+col+'"/>');
+      else if (r.kind==='work')   parts.push('<circle cx="'+x0+'" cy="'+y+'" r="3.9" fill="'+col+'"/><circle cx="'+x0+'" cy="'+y+'" r="1.3" fill="#121212"/>');
+      else if (r.kind==='artist') parts.push('<circle cx="'+x0+'" cy="'+y+'" r="3.4" fill="none" stroke="'+col+'" stroke-width="1.4"/>');
+      else                        parts.push('<circle cx="'+x0+'" cy="'+y+'" r="2.3" fill="#8C877E"/>');
+      var fill = r.kind==='work' ? '#ECE9E3' : (r.kind==='root' ? '#A7A199' : '#C4BEB4');
+      parts.push('<text x="'+(x0+13)+'" y="'+(y+4.2)+'" font-size="13.5" fill="'+fill+'">'+esc(r.val)+'</text>');
+    });
+    return card('Stammbaum', '', svg(H, parts));
+  }
+
+  // Lebenslinie des Künstlers auf der Korpus-Zeitachse, mit Werk-Marke.
+  function cardLifeline(rec, w, col){
+    var H=26, x0=6, x1=CW-6, base=15, span=CORPUS_Y1-CORPUS_Y0, parts=[];
+    function X(y){ return x0 + (Math.max(CORPUS_Y0,Math.min(CORPUS_Y1,y))-CORPUS_Y0)/span*(x1-x0); }
+    parts.push('<line x1="'+x0+'" y1="'+base+'" x2="'+x1+'" y2="'+base+'" stroke="#302D29" stroke-width="1"/>');
+    var bx=X(rec.birth), dx=X(rec.death);
+    parts.push('<rect x="'+bx.toFixed(1)+'" y="'+(base-3.5)+'" width="'+Math.max(2,dx-bx).toFixed(1)+'" height="7" rx="3.5" fill="'+col+'" opacity="0.9"/>');
+    if (w.year){ var wx=X(w.year).toFixed(1);
+      parts.push('<line x1="'+wx+'" y1="'+(base-8)+'" x2="'+wx+'" y2="'+(base+5)+'" stroke="#E7C879" stroke-width="1.3"/>');
+      parts.push('<circle cx="'+wx+'" cy="'+(base-8)+'" r="2.3" fill="#E7C879"/>');
+    }
+    return card('Lebenslinie', rec.birth+'–'+rec.death+' · '+(rec.death-rec.birth)+' J.'+(w.year?(' · Werk '+w.year):''), svg(H, parts));
+  }
+
+  // Zeitgenossen-Netz (Ego-Graph) in der Sprache des Netzwerk-Originals:
+  // geschwungene, regionsfarbige Kanten (Dicke ∝ Überlappung), Knoten in
+  // Regionsfarbe mit Genre-Innenpunkt, der Künstler des Werks im goldenen
+  // Auswahlring. Gleiche Regel: gleiche Region · produktive Überlappung ≥8 J.
+  function cardNet(norm, adj){
+    var self=NET_NODE[norm], H=168, cx0=CW/2, cy0=88, parts=[];
+    var list=adj.slice().sort(function(a,b){return b.overlap-a.overlap;}).slice(0,9);
+    var pos=list.map(function(c,i){
+      var ang=(i/list.length)*Math.PI*2 - Math.PI/2 + (i%2?0.12:-0.12);
+      var tie=1/(1+c.overlap/8);              // enge Bindung -> näher am Zentrum
+      var rad=50 + tie*72;
+      return {x:cx0+Math.cos(ang)*rad*1.05, y:cy0+Math.sin(ang)*rad*0.66, c:c};
+    });
+    // Kanten (geschwungene Bézier, wie im Original)
+    pos.forEach(function(p){
+      var c=p.c, x1=cx0, y1=cy0, x2=p.x, y2=p.y, dx=x2-x1, dy=y2-y1, d=Math.sqrt(dx*dx+dy*dy)||1;
+      var k=Math.min(0.22, 12/d+0.04), mx=(x1+x2)/2 - dy*k, my=(y1+y2)/2 + dx*k;
+      var sw=Math.min(2.6, 0.4 + Math.pow(c.overlap,0.85)/13);
+      parts.push('<path d="M'+x1+','+y1+' Q'+mx.toFixed(1)+','+my.toFixed(1)+' '+x2.toFixed(1)+','+y2.toFixed(1)+
+                 '" fill="none" stroke="'+regionColor(c.region)+'" stroke-width="'+sw.toFixed(2)+'" stroke-opacity="0.7" stroke-linecap="round"/>');
+    });
+    // Zeitgenossen-Knoten + Genre-Innenpunkt
+    pos.forEach(function(p){
+      var c=p.c, r=netR(c.works), nd2=NET_NODE[c.norm];
+      parts.push('<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+regionColor(c.region)+'" fill-opacity="0.9" stroke="#181715" stroke-width="0.8"/>');
+      if (nd2 && nd2.genreColor && r>=4.5)
+        parts.push('<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+Math.max(1.5,r*0.42).toFixed(1)+'" fill="'+nd2.genreColor+'" stroke="#181715" stroke-width="0.5"/>');
+    });
+    // Zentrum: Künstler des Werks, goldener Auswahlring (wie Klick im Original)
+    var cr=netR((self&&self.works)||1);
+    parts.push('<circle cx="'+cx0+'" cy="'+cy0+'" r="'+(cr+4.5).toFixed(1)+'" fill="none" stroke="#E7C879" stroke-opacity="0.95" stroke-width="2.2"/>');
+    parts.push('<circle cx="'+cx0+'" cy="'+cy0+'" r="'+cr.toFixed(1)+'" fill="'+regionColor(self?self.region:'Andere')+'" stroke="#181715" stroke-width="0.8"/>');
+    if (self && self.genreColor)
+      parts.push('<circle cx="'+cx0+'" cy="'+cy0+'" r="'+Math.max(1.7,cr*0.42).toFixed(1)+'" fill="'+self.genreColor+'" stroke="#181715" stroke-width="0.5"/>');
+    return card('Zeitgenossen', adj.length+' · '+(self?self.region:''), svg(H, parts));
+  }
+
+  // Zeit-Umfeld: was der Korpus im Fenster ±10 Jahre um das Werk gibt —
+  // Ereignisse (vier Stränge, farbcodiert) wie im „Werke und Ereignisse"-
+  // Großbild, plus die Zahl der Korpus-Werke in diesem Fenster.
+  function cardEvents(w){
+    var y = w.year; if (!y) return '';
+    var WIN = 3;   // Fenster ±3 Jahre um das Werk
+    var strands = opener.CHRONO_STRANDS || [];
+    var META = opener.CHRONO_STRAND_META || {};
+    var evs = strands.filter(function(e){ return e.y>=y-WIN && e.y<=y+WIN; })
+                     .sort(function(a,b){ return a.y-b.y; });
+    var nWorks = (opener.RAW_WORKS||[]).filter(function(k){ return k.year && k.year>=y-WIN && k.year<=y+WIN; }).length;
+    var lh=21, top=3, parts=[], show=evs.slice(0,6), rowsN=Math.max(1, show.length);   // v17 · Zeilenhoehe groesser
+    if (!show.length){
+      parts.push('<text x="1" y="15" font-size="12.5" fill="#9A948B">keine Ereignisse in diesem Fenster</text>');
+    } else {
+      show.forEach(function(e,i){
+        var yy=top + i*lh + 14, col=(META[e.s]||{}).color || '#8C877E';
+        parts.push('<text x="1" y="'+yy+'" font-size="12" fill="#9A948B">'+e.y+'</text>');
+        parts.push('<circle cx="40" cy="'+(yy-4)+'" r="3.6" fill="'+col+'"/>');
+        parts.push('<text x="52" y="'+yy+'" font-size="13" fill="#C4BEB4">'+esc(trunc(e.t,32))+'</text>');
+      });
+    }
+    var extra = evs.length>show.length;
+    var H = top + rowsN*lh + (extra?lh:0) + 4;
+    if (extra){
+      var yy2=top + show.length*lh + 14;
+      parts.push('<text x="52" y="'+yy2+'" font-size="11.5" fill="#8C877E">+'+(evs.length-show.length)+' weitere</text>');
+    }
+    return card('Zeit-Umfeld', (y-WIN)+'–'+(y+WIN)+' · '+nWorks+' Werke im Korpus', svg(H, parts));
+  }
+
+  // Panel für das fokussierte Werk zusammenstellen; gibt die Kartenanzahl zurück.
+  function buildBreadcrumbs(nd){
+    if (!graphReady) { try { buildGraphData(); } catch(e){} }
+    var w = nd.work || {}, norm = opener.normName(w.artist||'');
+    var rec = ARTIST_BY_NORM[norm], country = w.country || 'Andere', col = regionColor(country);
+    var cards = [ cardTree(w, col) ];
+    if (rec && rec.birth && rec.death && rec.death>rec.birth){
+      var lifeCol = regionColor((NET_NODE[norm] && NET_NODE[norm].region) || country);
+      cards.push(cardLifeline(rec, w, lifeCol));
+    }
+    var adj = NET_ADJ[norm];
+    if (adj && adj.length) cards.push(cardNet(norm, adj));
+    if (w.year) { var ev = cardEvents(w); if (ev) cards.push(ev); }
+    elBC.innerHTML = cards.join('');
+    return cards.length;
+  }
+
+  function hideFocusUI(){ elCap.classList.remove('on'); elBC.classList.remove('on'); }
+
+  function setCaption(nd){
+    elCArtist.textContent = nd.work.artist || 'Unbekannt / anonym';
+    elCMeta.textContent = (nd.work.title||'') + '  ·  ' + (nd.work.year_str||nd.work.year||'') +
+                          (nd.work.location ? '  ·  '+nd.work.location : '');
+    elCDot.style.background = (nd.prov&&nd.prov.color)||'#555';
+    elCProv.textContent = (nd.prov&&nd.prov.short?nd.prov.short:'') + (nd.prov&&nd.prov.label?(' · '+nd.prov.label):'');
+    elCap.classList.add('on');
+    // Herkunfts-Diagramme rechts aufbauen und einblenden
+    var nCards = 0;
+    try { nCards = buildBreadcrumbs(nd); } catch(e) { nCards = 0; }
+    if (nCards > 0) { elBC.classList.add('on'); if (focus) focus.bc = true; }
+    else            { elBC.classList.remove('on'); if (focus) focus.bc = false; }
+  }
+
+  function startFocus(live){
+    var nd = live[Math.floor(Math.random()*live.length)];
+    if (!nd || !nd.loaded) return;
+    focus = { node:nd, p:0, phase:'in', hold:0 };
+    setCaption(nd);
+  }
+
+  // Sequenzielle Slideshow (aktiv wenn nach Künstler gefiltert wird): geht der Reihe
+  // nach durch dessen Werke, statt zufällig aus der ganzen Masse zu greifen.
+  function startFocusSequential(live){
+    var n = live.length;
+    for (var k=0;k<n;k++){
+      var idx = (slideIdx+k) % n;
+      var nd = live[idx];
+      if (nd && nd.loaded){
+        slideIdx = idx+1;
+        focus = { node:nd, p:0, phase:'in', hold:0 };
+        setCaption(nd);
+        return;
+      }
+    }
+    // noch nichts geladen -> bald erneut versuchen
+    focusClock = IDLE_GAP_ARTIST - 8;
+  }
+
+  // ---------- Zeichnen ----------
+  function ease(t){ return t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
+
+  /* v18 · PERFORMANCE: Pfad-Clip + Voll-drawImage pro Knoten pro Frame war der
+     teuerste Zeichenschritt (229×/Frame). Jedes geladene Bild wird jetzt EINMAL
+     als rundes 144-px-Sprite vorgerendert; im Frame bleibt genau ein drawImage.
+     Optik identisch (das Sprite ist größer als jeder Anzeige-Radius). */
+  var SPR = 144;   // Sprite-Kantenlänge (>= 2×64 max. Radius + Reserve)
+  function spriteFor(nd) {
+    if (nd._spr) return nd._spr;
+    if (!(nd.loaded && nd.img.naturalWidth)) return null;
+    var c = document.createElement('canvas'); c.width = SPR; c.height = SPR;
+    var g2 = c.getContext('2d');
+    g2.beginPath(); g2.arc(SPR/2, SPR/2, SPR/2, 0, Math.PI*2); g2.closePath();
+    g2.fillStyle = '#1E1C18'; g2.fill(); g2.clip();
+    var iw=nd.img.naturalWidth, ih=nd.img.naturalHeight, s=Math.max(SPR/iw, SPR/ih);
+    g2.drawImage(nd.img, (SPR-iw*s)/2, (SPR-ih*s)/2, iw*s, ih*s);
+    nd._spr = c;
+    return c;
+  }
+  function drawNode(nd, dim) {
+    var a = nd.alpha * (1 - 0.72*dim);
+    if (a<=0.01) return;
+    // Hover-Vorschau: der Knoten wächst rein optisch etwas, ohne die
+    // Nachbarn per Physik zu verdrängen — man sieht kurz an, was sich öffnet.
+    var hr = nd.r * (1 + 0.32*nd.hoverT);
+    var spr = spriteFor(nd);
+    ctx.save();
+    ctx.globalAlpha = a;
+    if (nd.hoverT > 0.01) {
+      ctx.shadowColor = 'rgba(0,0,0,0.55)';
+      ctx.shadowBlur = 22*nd.hoverT;
+    }
+    if (spr) {
+      ctx.drawImage(spr, nd.x-hr, nd.y-hr, hr*2, hr*2);
+    } else {
+      // Grundscheibe (Bild lädt noch)
+      ctx.beginPath(); ctx.arc(nd.x, nd.y, hr, 0, Math.PI*2); ctx.closePath();
+      ctx.fillStyle = '#1E1C18'; ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function loop() {
+    if (ready && !opener.closed) step();
+    ctx.clearRect(0,0,W,H);
+    var dim = focus ? ease(focus.p) : 0;
+
+    // ---- Netzwerk-Kanten (Lage 1/2): weicher, breiter Schimmer UNTER den
+    // Bildern. Betont die Verbindungen als Lichthof in den Zwischenräumen. ----
+    var edgeFade = (1 - 0.85*dim);
+    ctx.save();
+    ctx.lineWidth = 3.6; ctx.strokeStyle = 'rgb(150,140,120)';
+    for (var e=0;e<edges.length;e++){
+      var p=edges[e][0], q=edges[e][1];
+      if (p.alpha<0.05||q.alpha<0.05) continue;
+      var d2=edges[e][2]||0, prox=1/(1+d2/9000);
+      ctx.globalAlpha = (0.06*prox+0.025)*edgeFade*Math.min(p.alpha,q.alpha);
+      ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y); ctx.stroke();
+    }
+    ctx.restore();
+
+    // Knoten
+    for (var i=0;i<nodes.length;i++){ if (focus && nodes[i]===focus.node) continue; drawNode(nodes[i], dim); }
+
+    // ---- Netzwerk-Kanten (Lage 2/2): dünne, klare Linie ÜBER den Bildern.
+    // So bleibt das Netz auch dicht gepackt ("Alle Werke") als Verbindung
+    // lesbar — ohne den Bildern einen Rahmen zu geben. Verbindungen des
+    // überfahrenen Knotens leuchten gold auf. ----
+    var overFade = (1 - Math.min(1, 2.0*dim));   // beim Aufziehen des Fokus schnell weg
+    if (overFade > 0.01){
+      ctx.save();
+      ctx.lineWidth = 1; ctx.strokeStyle = 'rgb(220,210,186)';
+      for (var e2=0;e2<edges.length;e2++){
+        var p2=edges[e2][0], q2=edges[e2][1];
+        if (p2.alpha<0.05||q2.alpha<0.05) continue;
+        if (hoverNode && (p2===hoverNode||q2===hoverNode)) continue;
+        var d22=edges[e2][2]||0, prox2=1/(1+d22/9000);
+        ctx.globalAlpha = (0.10+0.20*prox2)*overFade*Math.min(p2.alpha,q2.alpha);
+        ctx.beginPath(); ctx.moveTo(p2.x,p2.y); ctx.lineTo(q2.x,q2.y); ctx.stroke();
+      }
+      // Verbindungen des überfahrenen Knotens hervorheben (gold)
+      if (hoverNode && hoverNode.alpha>0.05 && !(focus&&focus.node===hoverNode)){
+        ctx.strokeStyle='rgba(231,200,121,0.95)'; ctx.lineWidth=1.8;
+        for (var e3=0;e3<edges.length;e3++){
+          var p3=edges[e3][0], q3=edges[e3][1];
+          if (p3!==hoverNode&&q3!==hoverNode) continue;
+          if (p3.alpha<0.05||q3.alpha<0.05) continue;
+          ctx.globalAlpha = 0.95*overFade;
+          ctx.beginPath(); ctx.moveTo(p3.x,p3.y); ctx.lineTo(q3.x,q3.y); ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    // Fokus (aufgerufenes Werk hebt sich smooth aus der Masse)
+    if (focus && focus.node){
+      var nd=focus.node, p=ease(focus.p);
+      // Verdunkelung
+      ctx.save(); ctx.globalAlpha=0.55*p; ctx.fillStyle='#0a0a0a'; ctx.fillRect(0,0,W,H); ctx.restore();
+      var iw=nd.img.naturalWidth||1, ih=nd.img.naturalHeight||1;
+      // Sind Herkunfts-Diagramme sichtbar, bekommt das Großbild eine eigene
+      // Fläche: rechts bleibt Platz für die Karten, unten links für die Werk-
+      // Beschriftung (Name/Titel). So legt sich das Bild nicht mehr über den
+      // Text. Ohne Diagramme bleibt das Bild groß und mittig wie bisher.
+      var hasBC = !!focus.bc;
+      var destX, destY, maxW, maxH;
+      if (hasBC){
+        var RIGHT = 450;            // v17 · rechte Spalte (Diagramme) — breiter wegen groesserer Karten
+        var CAP   = 188;            // v17 · untere linke Zone (Werk-Beschriftung) — hoeher wegen groesserer Schrift
+        var boxL=44, boxR=W-RIGHT-24, boxTop=74, boxBot=H-CAP;
+        var boxW=Math.max(220, boxR-boxL), boxH=Math.max(200, boxBot-boxTop);
+        destX=boxL+boxW/2; destY=boxTop+boxH/2; maxW=boxW; maxH=boxH;
+      } else {
+        destX=cx; destY=cy; maxW=W*0.60; maxH=H*0.80;
+      }
+      var fs=Math.min(maxW/iw, maxH/ih);
+      var startS=(nd.r*2)/Math.max(iw,ih);
+      var s = startS + (fs-startS)*p;
+      var tx = nd.x + (destX-nd.x)*p, ty = nd.y + (destY-nd.y)*p;
+      var dw=iw*s, dh=ih*s;
+      ctx.save();
+      ctx.globalAlpha = Math.max(nd.alpha, p);
+      // Schatten wird getrennt von drawImage geworfen (eigene deckende Fläche),
+      // sonst erzeugt shadowBlur+drawImage in Chrome einen sichtbaren Nahtstrich am Bildrand.
+      ctx.save();
+      ctx.shadowColor='rgba(0,0,0,0.65)'; ctx.shadowBlur=70*p; ctx.shadowOffsetY=24*p;
+      ctx.fillStyle='#0a0a0a';
+      ctx.fillRect(tx-dw/2, ty-dh/2, dw, dh);
+      ctx.restore();
+      // Bild "nackt", ohne Rahmen/Ring, exakt deckungsgleich über die Schattenfläche
+      ctx.drawImage(nd.img, tx-dw/2, ty-dh/2, dw, dh);
+      ctx.restore();
+    }
+    requestAnimationFrame(loop);
+  }
+
+  waitForData();
+})();
+</script>
+</body>
+</html>
