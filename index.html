@@ -24066,7 +24066,13 @@ function SpitzbogenView({t, setTab, layers}) {
   /* ── Heranfahren wie im Größenmodul: erster Klick zoomt HALB an das
      Fenster heran (sanfter transform-Tween auf der ganzen Bühne), der
      zweite Klick auf dasselbe Fenster tritt wirklich ein (setTab). ── */
-  const fit = Math.min((vp.w * 0.97) / FW, (vp.h * 0.94) / FH);
+  /* v153 · Ist das Beamer-Feld offen, rückt die Fassade in die freie Fläche
+     links davon, statt sich hinter dem Feld zu verstecken. */
+  const [dockW, setDockW] = React.useState(() => window.__FT_DOCK_W__ || 0);
+  React.useEffect(() => { const h = (e) => setDockW(e.detail || 0);
+    window.addEventListener('ft:dock', h); return () => window.removeEventListener('ft:dock', h); }, []);
+  const vw = Math.max(320, vp.w - dockW);
+  const fit = Math.min((vw * 0.97) / FW, (vp.h * 0.94) / FH);
   const selCard = sel ? CARDS.find(c => c.id === sel) : null;
   let buehne;
   if (selCard && LAGE[sel]) {
@@ -24074,9 +24080,9 @@ function SpitzbogenView({t, setTab, layers}) {
     const w = F.w * L.s, h = F.h * L.s;
     const kz = Math.max(fit * 1.5, Math.min(fit * 2.5, (vp.h * 0.58) / h, (vp.w * 0.55) / w));
     const cy = L.base - h / 2;
-    buehne = 'translate(' + (vp.w/2 - L.x*kz).toFixed(1) + 'px, ' + (vp.h*0.42 - cy*kz).toFixed(1) + 'px) scale(' + kz.toFixed(4) + ')';
+    buehne = 'translate(' + (vw/2 - L.x*kz).toFixed(1) + 'px, ' + (vp.h*0.42 - cy*kz).toFixed(1) + 'px) scale(' + kz.toFixed(4) + ')';
   } else {
-    buehne = 'translate(' + ((vp.w - FW*fit)/2).toFixed(1) + 'px, ' + ((vp.h - FH*fit)/2).toFixed(1) + 'px) scale(' + fit.toFixed(4) + ')';
+    buehne = 'translate(' + ((vw - FW*fit)/2).toFixed(1) + 'px, ' + ((vp.h - FH*fit)/2).toFixed(1) + 'px) scale(' + fit.toFixed(4) + ')';
   }
 
   const klickFenster = (e, id) => {
@@ -24249,14 +24255,14 @@ function SpitzbogenView({t, setTab, layers}) {
       </div>
       {/* Beim Heranfahren: die Tafel zum gewählten Fenster, wie die Aside im Gang */}
       {selCard && (
-        <div className="kath-caption">
+        <div className="kath-caption" style={{left: 'calc(50% - ' + (dockW/2) + 'px)'}}>
           <div className="arch-formname">{BOGEN_FORMEN[selCard.form].name} · {BAND_UNTER[selCard.band]}</div>
           <div className="arch-name">{selCard.label}</div>
           <div className="arch-desc">{selCard.desc}</div>
           <div className="kath-cap-hint">Noch ein Klick öffnet dieses Fenster · Klick daneben kehrt zurück</div>
         </div>
       )}
-      <div className="arch-hint3d">
+      <div className="arch-hint3d" style={{left: 'calc(50% - ' + (dockW/2) + 'px)', transition: 'left 760ms cubic-bezier(.45,0,.15,1)'}}>
         {sel ? 'Zweiter Klick tritt ein · Klick neben das Fenster kehrt zur Fassade zurück · Esc'
              : 'Die ganze Fassade auf einen Blick · Klick auf ein Fenster fährt heran · Pfeiltasten wandern'}
       </div>
@@ -25742,6 +25748,15 @@ footer.filter-bar .time-btn:hover, footer.filter-bar button:not(.set):not([disab
     screen.style.width = w + 'px'; screen.style.height = (w * H / W) + 'px';
     scale.style.transform = 'scale(' + (w / W) + ')';
     if (big) dock.querySelector('.fd-head').style.width = w + 'px'; else dock.querySelector('.fd-head').style.width = '';
+    announce();
+  }
+  /* v153 · Platz, den das offene Feld rechts braucht, an die Fassade melden */
+  var lastW = -1;
+  function announce(){
+    var open = !dock.classList.contains('mini') && !dock.classList.contains('big') && !dock.classList.contains('detached');
+    var w = open && innerWidth > 900 ? dock.offsetWidth + 28 : 0;
+    if (w === lastW) return; lastW = w; window.__FT_DOCK_W__ = w;
+    try { window.dispatchEvent(new CustomEvent('ft:dock', { detail: w })); } catch(_) {}
   }
   function setBig(on){ dock.classList.toggle('big', on); dock.classList.remove('mini'); bBig.textContent = on ? 'Verkleinern' : 'Groß'; fit(); }
   bBig.addEventListener('click', function(){ setBig(!dock.classList.contains('big')); });
@@ -25756,7 +25771,7 @@ footer.filter-bar .time-btn:hover, footer.filter-bar button:not(.set):not([disab
     if (win && !win.closed) { win.focus(); return; }
     win = window.open('beamer.html', 'ft-beamer', 'width=1280,height=800');
     if (!win) return;
-    setBig(false); dock.classList.add('detached'); frame.src = 'about:blank';
+    setBig(false); dock.classList.add('detached'); frame.src = 'about:blank'; announce();
     clearInterval(watch); watch = setInterval(function(){ if (!win || win.closed) reattach(); }, 800);
   }
   function reattach(){ clearInterval(watch); if (win && !win.closed) win.close(); win = null; dock.classList.remove('detached'); frame.src = 'beamer.html'; fit(); }
