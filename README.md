@@ -4,7 +4,7 @@ Michel Hérubels „Die Malerei der Gotik“ (1966) als Datenbestand: 816 Eintr�
 
 ## Dateien
 
-- `index.html` ist die Oberfläche (Version 152). Unten rechts läuft eine kleine Beamer-Ansicht mit, die jedem Filter folgt.
+- `index.html` ist die Oberfläche (Version 153). Unten rechts läuft eine kleine Beamer-Ansicht mit, die jedem Filter folgt.
 - `beamer.html` ist die Beamer-Ansicht. Sie zeigt die gefilterten Werke als Netz und alle paar Sekunden ein Werk im Großbild.
 
 ## Beamer
@@ -16,6 +16,8 @@ Das Beamer-Feld unten rechts hat drei Knöpfe:
 - **–** klappt das Feld ein.
 
 Die Bilder kommen von Wikimedia Commons (gemeinfrei) und brauchen eine Internetverbindung.
+
+Jedes Bild nennt seinen Beleg: MUSEUM (vom Haus bestätigt), ZUSCHREIBUNG (über Commons der Hand zugeordnet, ohne Museumsbeleg) oder ANDERES WERK. Bei 55 Werken gibt es kein eigenes Bild; dort steht ein anderes Werk derselben Hand stellvertretend da, und das wird so auch angezeigt.
 
 ## Bedienung
 

@@ -47,6 +47,8 @@
   #caption .c-meta{font-family:var(--font-mono);font-size:18px;color:var(--ink-mid);margin-top:7px;line-height:1.4;}
   #caption .c-prov{font-family:var(--font-mono);font-size:14px;letter-spacing:.06em;
     text-transform:uppercase;margin-top:10px;display:inline-flex;align-items:center;gap:8px;color:var(--ink-mid);}
+  #caption.sv .c-prov{color:#E2A27A;text-transform:none;letter-spacing:.01em;max-width:62ch;line-height:1.4;align-items:flex-start;}
+  #caption.sv .c-prov .dot{margin-top:4px;flex:none;}
   #caption .c-prov .dot{width:11px;height:11px;border-radius:50%;box-shadow:0 0 0 1px rgba(255,255,255,.25);}
 
   /* leerer Filter */
@@ -408,7 +410,7 @@
   }
 
   // ---------- Kopf-/Randdaten ----------
-  function setHeader(f, nWorks, nImg) {
+  function setHeader(f, nWorks, nImg, nSv) {
     elFilter.innerHTML = '';
     function chip(t, axis){ var c=document.createElement('span'); c.className='chip'+(axis?' axis':''); c.textContent=t; elFilter.appendChild(c); }
     var title=document.createElement('span'); title.className='ft-title';
@@ -423,7 +425,7 @@
     // Absichtlich explizit: nImg ist die Teilmenge von nWorks, die tatsächlich
     // ein Bild hat. Die Differenz sind Werke im Filter ohne überliefertes Bild —
     // kein Anzeigefehler, sondern eine Lücke in den Bilddaten.
-    elCount.textContent = nImg + ' von ' + nWorks + ' Werk' + (nWorks===1?'':'en') + ' mit Bild';
+    elCount.textContent = nImg + ' von ' + nWorks + ' Werk' + (nWorks===1?'':'en') + ' mit Bild' + (nSv ? ', ' + nSv + ' davon stellvertretend' : '');
   }
   function titleText(f){
     if(!f.active) return 'Alle Werke';
@@ -452,7 +454,8 @@
         return i % Math.ceil(items.length/MAX_NODES) === 0;
       }).slice(0, MAX_NODES);
     }
-    setHeader(f, works.length, imgTotal);
+    var svTotal = items.filter(function(it){ return it.prov && it.prov.key === 'stellvertreter'; }).length;   /* v153 */
+    setHeader(f, works.length, imgTotal, svTotal);
 
     var newMode = (f.active && f.artists && f.artists.length>0) ? 'artist' : 'ambient';
     if (newMode !== mode) { mode = newMode; slideIdx = 0; focusClock = 0; }
@@ -743,6 +746,7 @@
                           (nd.work.location ? '  ·  '+nd.work.location : '');
     elCDot.style.background = (nd.prov&&nd.prov.color)||'#555';
     elCProv.textContent = (nd.prov&&nd.prov.short?nd.prov.short:'') + (nd.prov&&nd.prov.label?(' · '+nd.prov.label):'');
+    elCap.classList.toggle('sv', !!(nd.prov && nd.prov.key === 'stellvertreter'));   /* v153 */
     elCap.classList.add('on');
     // Herkunfts-Diagramme rechts aufbauen und einblenden
     var nCards = 0;
